@@ -4,6 +4,8 @@
 
 本项目用于构建并掌握 LLM 推理平台的核心链路。学习目标是对请求路径、性能、稳定性与成本逐步建立技术所有权，而非只调用模型 API。
 
+阶段路线、时间投入和验收标准见 [LEARNING_PLAN.md](LEARNING_PLAN.md)。
+
 ## 当前模块
 
 - `cmd/gateway`：HTTP Gateway，接收 `POST /v1/chat/completions`，校验 JSON 后转发给模型后端。
