@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -125,6 +126,64 @@ func TestHandlerForwardsEventStreamWithoutWaitingForCompletion(t *testing.T) {
 	}
 	if string(remaining) != "data: second\n\ndata: [DONE]\n\n" {
 		t.Fatalf("剩余流式响应 = %q", remaining)
+	}
+}
+
+func TestHandlerCancelsUpstreamStreamWhenClientCancels(t *testing.T) {
+	backendCancelled := make(chan struct{}, 1)
+	releaseBackend := make(chan struct{})
+	defer close(releaseBackend)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: first\n\n"))
+		w.(http.Flusher).Flush()
+
+		select {
+		case <-r.Context().Done():
+			backendCancelled <- struct{}{}
+		case <-releaseBackend:
+		}
+	}))
+	defer backend.Close()
+
+	handler, err := NewHandler(backend.URL, backend.Client())
+	if err != nil {
+		t.Fatalf("创建 Handler 失败: %v", err)
+	}
+	gatewayServer := httptest.NewServer(handler)
+	defer gatewayServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, gatewayServer.URL+"/v1/chat/completions", strings.NewReader(`{"stream":true}`))
+	if err != nil {
+		t.Fatalf("创建客户端请求失败: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := (&http.Client{Timeout: time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("发起流式请求失败: %v", err)
+	}
+	reader := bufio.NewReader(response.Body)
+	firstLine, err := reader.ReadString('\n')
+	if err != nil {
+		response.Body.Close()
+		t.Fatalf("读取第一段流式响应失败: %v", err)
+	}
+	if firstLine != "data: first\n" {
+		response.Body.Close()
+		t.Fatalf("第一段流式响应 = %q", firstLine)
+	}
+
+	cancel()
+	response.Body.Close()
+
+	select {
+	case <-backendCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("客户端取消后，Gateway 未取消上游流式请求")
 	}
 }
 
