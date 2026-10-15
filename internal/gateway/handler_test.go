@@ -1,12 +1,15 @@
 package gateway
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestHandlerForwardsChatCompletion(t *testing.T) {
@@ -64,6 +67,64 @@ func TestHandlerRejectsInvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "invalid_request") {
 		t.Fatalf("响应体未包含 invalid_request: %s", response.Body.String())
+	}
+}
+
+func TestHandlerForwardsEventStreamWithoutWaitingForCompletion(t *testing.T) {
+	secondChunk := make(chan struct{})
+	var closeSecondChunk sync.Once
+	defer closeSecondChunk.Do(func() { close(secondChunk) })
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write([]byte("data: first\n\n"))
+		w.(http.Flusher).Flush()
+		<-secondChunk
+		_, _ = w.Write([]byte("data: second\n\ndata: [DONE]\n\n"))
+	}))
+	defer backend.Close()
+
+	handler, err := NewHandler(backend.URL, backend.Client())
+	if err != nil {
+		t.Fatalf("创建 Handler 失败: %v", err)
+	}
+	gatewayServer := httptest.NewServer(handler)
+	defer gatewayServer.Close()
+
+	client := &http.Client{Timeout: time.Second}
+	response, err := client.Post(gatewayServer.URL+"/v1/chat/completions", "application/json", strings.NewReader(`{"stream":true}`))
+	if err != nil {
+		t.Fatalf("发起流式请求失败: %v", err)
+	}
+	defer response.Body.Close()
+
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+	if response.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want no-cache", response.Header.Get("Cache-Control"))
+	}
+
+	reader := bufio.NewReader(response.Body)
+	firstLine, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("读取第一段流式响应失败: %v", err)
+	}
+	if firstLine != "data: first\n" {
+		t.Fatalf("第一段流式响应 = %q", firstLine)
+	}
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("读取第一段流式响应分隔行失败: %v", err)
+	}
+
+	closeSecondChunk.Do(func() { close(secondChunk) })
+	remaining, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("读取剩余流式响应失败: %v", err)
+	}
+	if string(remaining) != "data: second\n\ndata: [DONE]\n\n" {
+		t.Fatalf("剩余流式响应 = %q", remaining)
 	}
 }
 

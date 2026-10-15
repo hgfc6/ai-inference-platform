@@ -28,6 +28,18 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var chatRequest struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(request, &chatRequest); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求体必须是有效 JSON"})
+		return
+	}
+	if chatRequest.Stream {
+		writeStream(w)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":      "chatcmpl-mock",
 		"object":  "chat.completion",
@@ -42,6 +54,68 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 			"finish_reason": "stop",
 		}},
 	})
+}
+
+func writeStream(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+
+	created := time.Now().Unix()
+	chunks := []map[string]any{
+		{
+			"id":      "chatcmpl-mock",
+			"object":  "chat.completion.chunk",
+			"created": created,
+			"model":   "mock-model",
+			"choices": []map[string]any{{
+				"index": 0,
+				"delta": map[string]string{
+					"role":    "assistant",
+					"content": "这是来自 ",
+				},
+				"finish_reason": nil,
+			}},
+		},
+		{
+			"id":      "chatcmpl-mock",
+			"object":  "chat.completion.chunk",
+			"created": created,
+			"model":   "mock-model",
+			"choices": []map[string]any{{
+				"index": 0,
+				"delta": map[string]string{
+					"content": "Mock Model Server 的流式响应。",
+				},
+				"finish_reason": "stop",
+			}},
+		},
+	}
+
+	for _, chunk := range chunks {
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			slog.Error("编码流式响应失败", "error", err)
+			return
+		}
+		if _, err := w.Write(append([]byte("data: "), append(data, '\n', '\n')...)); err != nil {
+			slog.Error("写入流式响应失败", "error", err)
+			return
+		}
+		flush(w)
+		time.Sleep(time.Second * 1)
+	}
+
+	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
+		slog.Error("写入流式响应结束标记失败", "error", err)
+		return
+	}
+	flush(w)
+}
+
+func flush(w http.ResponseWriter) {
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

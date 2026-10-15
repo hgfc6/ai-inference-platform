@@ -67,10 +67,42 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if contentType := backendResponse.Header.Get("Content-Type"); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
+	if cacheControl := backendResponse.Header.Get("Cache-Control"); cacheControl != "" {
+		w.Header().Set("Cache-Control", cacheControl)
+	}
 	w.WriteHeader(backendResponse.StatusCode)
+	if isEventStream(backendResponse.Header.Get("Content-Type")) {
+		if _, err := io.Copy(flushingWriter{ResponseWriter: w}, backendResponse.Body); err != nil {
+			return
+		}
+		return
+	}
 	if _, err := io.Copy(w, backendResponse.Body); err != nil {
 		return
 	}
+}
+
+func isEventStream(contentType string) bool {
+	mediaType, _, err := strings.Cut(contentType, ";")
+	if err {
+		contentType = mediaType
+	}
+	return strings.EqualFold(strings.TrimSpace(contentType), "text/event-stream")
+}
+
+type flushingWriter struct {
+	http.ResponseWriter
+}
+
+func (w flushingWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	if err != nil {
+		return n, err
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return n, nil
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

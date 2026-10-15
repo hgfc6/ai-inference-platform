@@ -8,8 +8,9 @@
 - 请求体 JSON 校验
 - 后端不可用时返回 `502`
 - Mock Model Server 返回 OpenAI 风格的聊天响应
+- `stream: true` 时透传 Server-Sent Events（SSE）流式响应
 
-当前不包含鉴权、流式 SSE、GPU、vLLM、Docker、Kubernetes 和可观测性；这些能力会在后续阶段按真实问题逐项加入。
+当前不包含鉴权、GPU、vLLM、Docker、Kubernetes 和可观测性；这些能力会在后续阶段按真实问题逐项加入。
 
 ## 目录
 
@@ -42,6 +43,14 @@ Invoke-RestMethod -Method Post `
   -Uri http://127.0.0.1:9527/v1/chat/completions `
   -ContentType 'application/json' `
   -Body '{"model":"mock-model","messages":[{"role":"user","content":"你好"}]}'
+```
+
+发送流式请求时，使用 `curl.exe -N` 禁用客户端缓冲：
+
+```powershell
+curl.exe -N http://127.0.0.1:9527/v1/chat/completions `
+  -H "Content-Type: application/json" `
+  -d '{"model":"mock-model","stream":true,"messages":[{"role":"user","content":"你好"}]}'
 ```
 
 ## 配置

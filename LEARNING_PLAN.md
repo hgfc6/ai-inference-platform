@@ -17,6 +17,7 @@
 | --- | --- | --- |
 | 最小请求路径 | 已完成 | Gateway `:9527` 可将请求转发给 Mock Model Server `:9528` |
 | JSON 与后端错误边界 | 已完成 | 自动化测试覆盖非法 JSON 与后端不可用 |
+| SSE 流式协议（Mock） | 已完成 | `stream: true` 时 Gateway 逐段透传 Mock SSE 响应 |
 | 真实模型推理 | 未开始 | 当前 `:9528` 仅返回固定 Mock 响应 |
 | GPU、vLLM、流式 SSE、指标、容器、Kubernetes | 未开始 | 不应把当前 v0 误认为 AI 推理系统 |
 
@@ -84,7 +85,7 @@
 
 实现与学习：
 
-- 支持 Server-Sent Events（SSE）透传；
+- 用真实推理后端重新验证 Server-Sent Events（SSE）透传；
 - 记录并解释 TTFT（首 token 延迟）、TPOT（每输出 token 的耗时）、端到端延迟、吞吐和错误率；
 - 用固定请求集在不同并发下压测；
 - 输出一份基线报告，而不是只报“感觉很快”。
