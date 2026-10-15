@@ -19,6 +19,7 @@
 | JSON 与后端错误边界 | 已完成 | 自动化测试覆盖非法 JSON 与后端不可用 |
 | SSE 流式协议（Mock） | 已完成 | `stream: true` 时 Gateway 逐段透传 Mock SSE 响应 |
 | SSE 取消传播（Mock） | 已完成 | 客户端取消后，上游请求上下文会被取消 |
+| 并发流基线（Mock） | 已完成 | 5 路 SSE 流可并发完成，不被 Gateway 串行处理 |
 | 真实模型推理 | 未开始 | 当前 `:9528` 仅返回固定 Mock 响应 |
 | GPU、vLLM、流式 SSE、指标、容器、Kubernetes | 未开始 | 不应把当前 v0 误认为 AI 推理系统 |
 

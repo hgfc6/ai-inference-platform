@@ -12,6 +12,7 @@
 - 已完成：学习目标、12 周路线、时间投入和各阶段验收标准已沉淀到 `LEARNING_PLAN.md`。
 - 已完成：Mock Model Server 在 `stream: true` 时发送 SSE；Gateway 透传响应并逐段刷新。
 - 已完成：客户端取消 SSE 流时，Gateway 会取消上游请求的集成测试。
+- 已完成：5 路 Mock SSE 并发流的 Gateway 端到端基线测试。
 - 未开始：鉴权、指标、真实推理引擎、容器与 Kubernetes。
 
 ## 本轮关键改动
@@ -24,6 +25,8 @@
 - 影响：覆盖 Mock SSE 响应和 Gateway 不等待流结束即转发首段数据的行为。
 - 文件：`internal/gateway/handler_test.go`。
 - 影响：覆盖客户端取消后，上游请求上下文被取消的行为。
+- 文件：`cmd/mock-model/main_test.go`。
+- 影响：覆盖 5 路并发流均完整返回，且不被 Gateway 串行处理的行为。
 
 ## 已确认决策
 
