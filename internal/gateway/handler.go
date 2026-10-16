@@ -10,23 +10,39 @@ import (
 	"strings"
 )
 
+// DefaultMaxInFlight 是 Gateway 默认允许的最大在途请求数。
+const DefaultMaxInFlight = 8
+
 // Handler 将聊天请求转发给模型后端。
 type Handler struct {
 	backendURL *url.URL
 	client     *http.Client
+	inFlight   chan struct{}
 }
 
 // NewHandler 创建使用指定模型后端的 Gateway Handler。
 func NewHandler(backendURL string, client *http.Client) (*Handler, error) {
+	return NewHandlerWithMaxInFlight(backendURL, client, DefaultMaxInFlight)
+}
+
+// NewHandlerWithMaxInFlight 创建带全局并发上限的 Gateway Handler。
+func NewHandlerWithMaxInFlight(backendURL string, client *http.Client, maxInFlight int) (*Handler, error) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return nil, fmt.Errorf("模型后端地址无效: %q", backendURL)
+	}
+	if maxInFlight <= 0 {
+		return nil, fmt.Errorf("最大在途请求数必须大于 0: %d", maxInFlight)
 	}
 	if client == nil {
 		client = http.DefaultClient
 	}
 
-	return &Handler{backendURL: parsedURL, client: client}, nil
+	return &Handler{
+		backendURL: parsedURL,
+		client:     client,
+		inFlight:   make(chan struct{}, maxInFlight),
+	}, nil
 }
 
 // ServeHTTP 校验 JSON 请求并将其转发给模型后端。
@@ -45,6 +61,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "请求体必须是有效 JSON")
 		return
 	}
+	if !h.tryAcquire() {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "gateway_overloaded", "Gateway 正忙，请稍后重试")
+		return
+	}
+	defer h.release()
 
 	targetURL := *h.backendURL
 	targetURL.Path = strings.TrimRight(targetURL.Path, "/") + r.URL.Path
@@ -80,6 +102,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, backendResponse.Body); err != nil {
 		return
 	}
+}
+
+func (h *Handler) tryAcquire() bool {
+	select {
+	case h.inFlight <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) release() {
+	<-h.inFlight
 }
 
 func isEventStream(contentType string) bool {

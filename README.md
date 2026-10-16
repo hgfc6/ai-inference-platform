@@ -9,8 +9,9 @@
 - 后端不可用时返回 `502`
 - Mock Model Server 返回 OpenAI 风格的聊天响应
 - `stream: true` 时透传 Server-Sent Events（SSE）流式响应
+- 全局在途请求数达到上限时立即返回 `503 Service Unavailable`
 
-当前不包含鉴权、GPU、vLLM、Docker、Kubernetes 和可观测性；这些能力会在后续阶段按真实问题逐项加入。
+当前不包含鉴权、GPU、vLLM、Docker、Kubernetes 和完整可观测性；这些能力会在后续阶段按真实问题逐项加入。
 
 ## 目录
 
@@ -60,6 +61,9 @@ curl.exe -N http://127.0.0.1:9527/v1/chat/completions `
 | `LISTEN_ADDR` | `:9527` | Gateway 监听地址 |
 | `MODEL_BACKEND_URL` | `http://127.0.0.1:9528` | 模型后端基础地址 |
 | `MOCK_MODEL_ADDR` | `:9528` | Mock Model Server 监听地址 |
+| `MAX_INFLIGHT_REQUESTS` | `8` | Gateway 全局最大在途请求数；满载时返回 `503` 与 `Retry-After: 1` |
+
+`MAX_INFLIGHT_REQUESTS` 必须为大于 0 的整数。默认值 `8` 只是 Mock 阶段防止无限堆积的安全基线；接入真实模型后，必须根据显存、TTFT、吞吐和错误率重新确定。
 
 ## 验证
 
